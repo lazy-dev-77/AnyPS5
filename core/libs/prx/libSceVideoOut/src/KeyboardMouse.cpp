@@ -162,18 +162,20 @@ Pad::KeyboardMouse::StickInput Pad::KeyboardMouse::stickInput() const {
     return input;
 }
 
-std::array<double, 2> Pad::KeyboardMouse::triggerTargets() const {
-    std::array<double, 2> targets{};
+std::array<Pad::KeyboardMouse::Clock::time_point, 2> Pad::KeyboardMouse::triggerHeldUntil(Clock::time_point from, Clock::time_point to) const {
+    std::array<Clock::time_point, 2> heldUntil{from, from};
     for (std::size_t index = 0; index < configuration.bindings.size(); ++index) {
         const auto& binding = configuration.bindings[index];
         if (!pressed[index] || binding.control != InputControl::Button) continue;
-        if (binding.button == PadButton::L2) targets[0] = 1.0;
-        if (binding.button == PadButton::R2) targets[1] = 1.0;
+        const auto release = binding.wheelDirection || binding.wheelTilt ? std::clamp(wheelReleaseTimes[index], from, to) : to;
+        if (binding.button == PadButton::L2) heldUntil[0] = std::max(heldUntil[0], release);
+        if (binding.button == PadButton::R2) heldUntil[1] = std::max(heldUntil[1], release);
     }
-    return targets;
+    return heldUntil;
 }
 
 bool Pad::KeyboardMouse::advanceAxes(Clock::time_point now) {
+    const auto previous = lastAxisAdvance;
     const double seconds = axesAdvanced && now > lastAxisAdvance ? std::chrono::duration<double>(now - lastAxisAdvance).count() : 0.0;
     if (!axesAdvanced || now > lastAxisAdvance) lastAxisAdvance = now;
     axesAdvanced = true;
@@ -185,9 +187,13 @@ bool Pad::KeyboardMouse::advanceAxes(Clock::time_point now) {
         for (std::size_t axis = 0; axis < stickAxes.size(); ++axis) moved = slew(stickAxes[axis], targets[axis], travel) || moved;
     }
     if (configuration.settings.triggerRampMs > 0.0) {
-        const auto targets = triggerTargets();
-        const double travel = seconds * 1000.0 / configuration.settings.triggerRampMs;
-        for (std::size_t trigger = 0; trigger < triggerAxes.size(); ++trigger) moved = slew(triggerAxes[trigger], targets[trigger], travel) || moved;
+        const auto heldUntil = triggerHeldUntil(previous, now);
+        for (std::size_t trigger = 0; trigger < triggerAxes.size(); ++trigger) {
+            const double heldMs = std::chrono::duration<double, std::milli>(heldUntil[trigger] - previous).count();
+            const double releasedMs = std::chrono::duration<double, std::milli>(now - heldUntil[trigger]).count();
+            moved = slew(triggerAxes[trigger], 1.0, heldMs / configuration.settings.triggerRampMs) || moved;
+            moved = slew(triggerAxes[trigger], 0.0, releasedMs / configuration.settings.triggerRampMs) || moved;
+        }
     }
     return moved;
 }

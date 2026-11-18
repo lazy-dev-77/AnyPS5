@@ -92,7 +92,7 @@ private:
     };
 
     StickInput stickInput() const;
-    std::array<double, 2> triggerTargets() const;
+    std::array<Clock::time_point, 2> triggerHeldUntil(Clock::time_point from, Clock::time_point to) const;
     bool advanceAxes(Clock::time_point now);
 
     InputConfiguration configuration;

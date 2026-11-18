@@ -422,6 +422,24 @@ void testWheelPress() {
     check((samples[120].state.buttons & up) == 0, "wheel press releases after its duration");
 }
 
+void testWheelTriggerRamp() {
+    auto configuration = defaults();
+    configuration.settings.triggerRampMs = 200.0;
+    configuration.bindings.push_back({SDL_SCANCODE_UNKNOWN, Pad::MouseButton::None, Pad::InputControl::Button, Pad::PadButton::R2, 1});
+    const auto start = Pad::KeyboardMouse::Clock::now();
+    const auto at = [start](int ms) { return start + std::chrono::milliseconds(ms); };
+    Pad::KeyboardMouse keyboardMouse(configuration);
+    keyboardMouse.HandleEvent(PadSimulation::WheelEvent(1), start);
+    keyboardMouse.Advance(at(100));
+    check(byteDistance(keyboardMouse.Compose(PadInputState{}).analogButtonsR2, 77) <= 1, "the trigger releases at the wheel pulse deadline between updates");
+    keyboardMouse.Advance(at(160));
+    check(keyboardMouse.Compose(PadInputState{}).analogButtonsR2 == 0, "a released wheel trigger returns to rest");
+    keyboardMouse.HandleEvent(PadSimulation::WheelEvent(1), at(200));
+    keyboardMouse.HandleEvent(PadSimulation::ButtonEvent(SDL_BUTTON_RIGHT, true), at(250));
+    keyboardMouse.Advance(at(400));
+    check(keyboardMouse.Compose(PadInputState{}).analogButtonsR2 == 255, "a held alternate trigger binding outlasts the wheel pulse");
+}
+
 
 void testWheelTilt() {
     const auto left = static_cast<std::uint32_t>(Pad::PadButton::Left);
@@ -803,6 +821,7 @@ int main() {
             {"trigger ramp", testTriggerRamp},
             {"ramp keeps advance reporting", testRampKeepsAdvanceReporting},
             {"wheel press", testWheelPress},
+            {"wheel trigger ramp", testWheelTriggerRamp},
             {"wheel tilt", testWheelTilt},
             {"wheel and keys on focus loss", testWheelFocusLoss},
             {"focus loss releases the mouse", testFocusLossReleasesMouse},
