@@ -150,6 +150,17 @@ class MeasurementStabilityTests(unittest.TestCase):
         self.assertFalse(performance_bisect.is_regression(58, 60, 5))
         self.assertTrue(performance_bisect.is_regression(57, 60, 5))
 
+    def test_regression_boundary_uses_the_reported_decimal_fps(self):
+        for before, exact in ((24.0, 22.8), (144.0, 136.8)):
+            with self.subTest(before=before):
+                self.assertTrue(performance_bisect.is_regression(exact, before, 5))
+                self.assertFalse(performance_bisect.is_regression(math.nextafter(exact, math.inf), before, 5))
+
+        samples = [{"fps": fps, "identity": IDENTITY} for fps in (12.3, 12.3, 12.4, 12.4)]
+        measured = performance_bisect.summarize(samples, 3)
+        self.assertEqual(measured["median_fps"], 12.35)
+        self.assertTrue(performance_bisect.is_regression(measured["median_fps"], 13.0, 5))
+
     def test_candidate_identity_must_match_baseline(self):
         with self.assertRaisesRegex(ValueError, "identity changed"):
             performance_bisect.require_same_identity({"identity": IDENTITY}, {"identity": dict(IDENTITY, driver="Other")})
