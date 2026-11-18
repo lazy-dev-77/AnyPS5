@@ -328,6 +328,26 @@ test("a visible error follows a language switch", async t => {
   assert.equal(get("error").children[0].textContent, "Cannot load release information (404). release.json is generated during the site build, so it is missing when serving demo/web directly.");
 });
 
+test("selecting an input retries a failed release lookup and shares an in-flight lookup", async t => {
+  const retry = deferred();
+  let requests = 0;
+  const { get, workers } = await setup(t, "retry-release", {
+    fetch: async () => ++requests === 1 ? { ok: false, status: 503 } : retry.promise
+  });
+  assert.equal(get("error").hidden, false);
+  await selected(get, workers, "first.zip");
+  assert.equal(requests, 2);
+  assert.equal(get("convert").disabled, true);
+  get("change").onclick();
+  const latest = await selected(get, workers, "second.zip");
+  assert.equal(requests, 2);
+  retry.resolve({ ok: true, json: async () => ({ tag: "v1", platforms: { linux: { expandedBytes: 123 }, windows: { expandedBytes: 456 } } }) });
+  await setImmediate();
+  assert.equal(get("convert").disabled, false);
+  await get("convert").onclick();
+  assert.equal(latest.messages.at(-1).type, "convert");
+});
+
 test("a browser that denies direct ZIP writes explains how to continue", async t => {
   const denied = Object.assign(new Error("createWritable blocked"), { name: "NotAllowedError" });
   const { get, workers } = await setup(t, "write-denied", {

@@ -18,6 +18,7 @@ let outputTransaction;
 let downloadUrl;
 let logs = [];
 let release;
+let loadingRelease = false;
 const canSaveZip = typeof window.showSaveFilePicker === "function" && window.isSecureContext;
 const canStream = typeof window.showDirectoryPicker === "function" && window.isSecureContext;
 const supported = window.isSecureContext && window.Worker && window.WebAssembly && window.ReadableStream && window.WritableStream && window.crypto?.subtle;
@@ -340,6 +341,7 @@ async function selectInputs(inputs) {
   $("progress").removeAttribute("value");
   lock(true);
   update();
+  loadRelease();
   try {
     const currentWorker = new Worker(new URL("./worker.mjs", import.meta.url), { type: "module" });
     worker = currentWorker;
@@ -454,11 +456,23 @@ $("locale").onclick = () => {
 updateLocaleButton();
 update();
 lock(false);
-if (supported) fetch("./release.json", { cache: "no-cache" }).then(response => { if (!response.ok) throw localizedError(() => translate(locale, "cannotLoadReleaseInfo", { status: response.status, hint: response.status === 404 ? translate(locale, "cannotLoadReleaseInfoHint") : "" })); return response.json(); }).then(value => {
-  if (!value.tag || !["windows", "linux"].every(target => Number.isSafeInteger(value.platforms?.[target]?.expandedBytes))) throw localizedError(() => translate(locale, "invalidReleaseInfo"));
-  release = value;
-  update();
-}).catch(error => fail(error instanceof TypeError ? () => translate(locale, "cannotReachReleaseInfo") : error));
+async function loadRelease() {
+  if (release || loadingRelease) return;
+  loadingRelease = true;
+  try {
+    const response = await fetch("./release.json", { cache: "no-cache" });
+    if (!response.ok) throw localizedError(() => translate(locale, "cannotLoadReleaseInfo", { status: response.status, hint: response.status === 404 ? translate(locale, "cannotLoadReleaseInfoHint") : "" }));
+    const value = await response.json();
+    if (!value.tag || !["windows", "linux"].every(target => Number.isSafeInteger(value.platforms?.[target]?.expandedBytes))) throw localizedError(() => translate(locale, "invalidReleaseInfo"));
+    release = value;
+    update();
+  } catch (error) {
+    await fail(error instanceof TypeError ? () => translate(locale, "cannotReachReleaseInfo") : error);
+  } finally {
+    loadingRelease = false;
+  }
+}
+if (supported) loadRelease();
 
 if (!("webkitdirectory" in $("folder"))) {
   $("choose-folder").disabled = true;
