@@ -115,6 +115,7 @@ private:
     int viewportWidth = 0;
     int viewportHeight = 0;
     std::optional<PadTouchPoint> mouseTouch;
+    std::optional<PadTouchPoint> lastMouseTouch;
     std::optional<PadTouchPoint> touchAt(int x, int y) const;
     std::uint32_t padButtons = 0;
 };

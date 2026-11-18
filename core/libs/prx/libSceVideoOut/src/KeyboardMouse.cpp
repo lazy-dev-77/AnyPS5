@@ -206,6 +206,7 @@ bool Pad::KeyboardMouse::Advance(Clock::time_point now) {
         gyroCountsY = 0.0;
     }
     bool changed = advanceAxes(now);
+    if (std::exchange(lastMouseTouch, mouseTouch) != mouseTouch) changed = true;
     if (gyroRate[0] != 0.0 || gyroRate[1] != 0.0) changed = true;
     for (std::size_t index = 0; index < configuration.bindings.size(); ++index) {
         const auto& binding = configuration.bindings[index];

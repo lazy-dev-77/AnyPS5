@@ -742,9 +742,13 @@ void testMouseTouchpad() {
     press(480, 270, SDL_BUTTON_LEFT, SDL_MOUSEBUTTONDOWN, now);
     const auto pressed = keyboard.Compose(idle).touch[0];
     check(pressed.active && pressed.x == 960 && pressed.y == 540, "a left press at the middle of a 960x540 window touches the middle of the pad");
+    keyboard.Advance(now);
     move(0, 0, now);
+    check(keyboard.Advance(now), "a mouse-only touch drag requests a new pad sample");
     const auto dragged = keyboard.Compose(idle).touch[0];
     check(dragged.active && dragged.x == 0 && dragged.y == 0, "a drag moves the touch point with the cursor");
+    move(0, 0, now);
+    check(!keyboard.Advance(now), "a stationary touch does not request another pad sample");
     press(5000, -10, SDL_BUTTON_LEFT, SDL_MOUSEBUTTONDOWN, now);
     const auto clamped = keyboard.Compose(idle).touch[0];
     check(clamped.active && clamped.x == 1918 && clamped.y == 0, "a press outside the window is clamped to the pad edge");
