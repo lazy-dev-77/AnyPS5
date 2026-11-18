@@ -206,6 +206,83 @@ class SelectGraphStateTests(SelectFixture):
         older.write_text(json.dumps(graph), encoding="utf-8")
         self.assertEqual(self.select("alpha/alpha.h", graph=older)[1], {"alpha", "alpha_data", "beta", "beta_setup", "script"})
 
+@unittest.skipUnless(shutil.which("git"), "needs git")
+class RestoredGraphTests(SelectFixture):
+    @classmethod
+    def git(cls, *args):
+        return subprocess.check_output(["git", "-C", str(cls.source), "-c", "user.name=Test",
+                                        "-c", "user.email=test@example.com", "-c", "commit.gpgSign=false", *args],
+                                       text=True).strip()
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        header = cls.source / "alpha/alpha.h"
+        header.write_text("#define ALPHA 0\n#define SHARED 0\n", encoding="utf-8")
+        cls.git("init", "-q")
+        cls.git("add", ".")
+        cls.git("commit", "-qm", "Graph baseline")
+        cls.baseline = cls.git("rev-parse", "HEAD")
+        subprocess.run(["cmake", "--build", str(cls.build)], check=True, capture_output=True)
+        cls.tool("dump", cls.build, cls.graph)
+        (cls.source / "beta/main.c").write_text('#include "../alpha/alpha.h"\nint main(void) { return SHARED; }\n',
+                                                encoding="utf-8")
+        cls.git("commit", "-qam", "Use shared header in beta")
+        cls.change_base = cls.git("rev-parse", "HEAD")
+        header.write_text("#define ALPHA 0\n#define SHARED 1\n", encoding="utf-8")
+        cls.git("commit", "-qam", "Change the shared constant")
+        cls.head = cls.git("rev-parse", "HEAD")
+
+    def test_cached_graph_selects_new_consumer_and_supplied_changes(self):
+        paths = self.git("diff", "--name-only", self.change_base, "HEAD").splitlines()
+        self.assertEqual(paths, ["alpha/alpha.h"])
+        _, selected = self.select(*paths)
+        subprocess.run(["cmake", "--build", str(self.build)], check=True, capture_output=True)
+        result = subprocess.run([sys.executable, str(TOOL), "ctest", str(self.build), "--output-on-failure"],
+                                capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertRegex(result.stdout, r"beta \.+\s*\*\*\*Failed")
+        self.assertEqual(selected, {"alpha", "alpha_data", "beta", "beta_setup", "script"})
+        self.assertEqual(json.loads(self.graph.read_text(encoding="utf-8"))["revision"], self.baseline)
+
+    def test_reverted_change_still_uses_supplied_paths(self):
+        self.git("checkout", "-q", "--detach", self.change_base)
+        try:
+            self.git("revert", "--no-edit", "HEAD")
+            self.assertEqual(self.git("diff", "--name-only", self.baseline, "HEAD"), "")
+            paths = self.git("diff", "--name-only", self.change_base, "HEAD").splitlines()
+            self.assertEqual(self.select(*paths)[1], {"beta", "beta_setup", "script"})
+        finally:
+            self.git("checkout", "-q", "--detach", self.head)
+
+    def test_unavailable_or_missing_graph_revision_clears_previous_selection(self):
+        metadata = json.loads(self.graph.read_text(encoding="utf-8"))
+        old = self.build / "cached.json"
+        for revision in (None, "1" * 40):
+            with self.subTest(revision=revision):
+                if revision is None:
+                    metadata.pop("revision", None)
+                else:
+                    metadata["revision"] = revision
+                old.write_text(json.dumps(metadata), encoding="utf-8")
+                self.assertIsNotNone(self.select("alpha/alpha.h")[1])
+                output, selected = self.select("alpha/alpha.h", graph=old)
+                self.assertIsNone(selected)
+                self.assertIn("full run", output)
+
+    def test_graph_dumped_with_uncommitted_inputs_requests_a_full_run(self):
+        source = self.source / "beta/main.c"
+        original = source.read_bytes()
+        graph = self.build / "dirty.json"
+        try:
+            source.write_text(PROJECT["beta/main.c"], encoding="utf-8")
+            subprocess.run(["cmake", "--build", str(self.build)], check=True, capture_output=True)
+            self.tool("dump", self.build, graph)
+        finally:
+            source.write_bytes(original)
+        self.assertIsNone(self.select("alpha/alpha.h", graph=graph)[1])
+
+
 class SelectBuildTests(SelectFixture):
     def test_selected_target_skips_unselected_executables(self):
         subprocess.run(["ninja", "-C", str(self.build), "-t", "clean"], check=True, capture_output=True)

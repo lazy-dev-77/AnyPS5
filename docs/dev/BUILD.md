@@ -44,7 +44,7 @@ git submodule update --init --recursive
 [`tools/select_tests.py`](../../tools/select_tests.py) selects the tests whose build inputs a change touches, so a pull request can build and run only those tests. Configure and build a full tree with `-DBUILD_TESTING=ON` (`dump` needs the header dependencies that only exist once the objects are built), then:
 
 ```sh
-git diff --name-only origin/main...HEAD > changed.txt
+git diff --name-only --no-renames -z origin/main...HEAD > changed.txt
 python3 tools/select_tests.py dump build test-graph.json
 python3 tools/select_tests.py select build test-graph.json changed.txt
 ninja -C build -f select.ninja selected
@@ -52,6 +52,8 @@ python3 tools/select_tests.py ctest build --output-on-failure
 ```
 
 `dump` reads the header dependencies recorded by a built tree, so build before dumping. `select` writes `select.ninja` and `select.tests` into the build directory; `ninja -f select.ninja selected` builds only the selected targets (when the change selects the full run, or the graph file is missing, `select` removes `select.ninja` and writes none, so run `cmake --build build` instead, as CI does), and the `ctest` subcommand runs only the selected tests. A change to `CMakeLists.txt`, `core/libs/CMakeLists.txt`, `3rdparty/`, `cmake/`, `.gitmodules`, the build workflow or `tools/select_tests.py` selects the full run. The `select=true` CI build uses the same selection.
+
+In a Git checkout, `dump` records the commit when the tracked sources match it. When reusing a graph, `select` includes files changed between that commit and `HEAD` alongside the paths in `changed.txt`. This includes tests that started consuming a header after the graph was saved. A missing or unreadable graph revision selects the full run in a checkout. Standalone source trees can still dump and select their own graphs using the supplied paths.
 
 [`tools/build_changed_guest_tests.py`](../../tools/build_changed_guest_tests.py) builds and runs the guest and host-only `core/libs` tests that a change touches, from the build directory and an optional changed-paths argument; `--output-log` writes its log to a file. [`tools/build_mingw_host_only_tests.py`](../../tools/build_mingw_host_only_tests.py) builds the `core/libs` test executables that do not link guest libc. It prints the executables it selects, and `--list-only` stops there without building them.
 

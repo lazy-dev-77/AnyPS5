@@ -174,6 +174,38 @@ def changed_paths(path):
     return [line.strip() for line in text.splitlines() if line.strip()]
 
 
+def is_git_checkout(source):
+    directory = Path(source).resolve()
+    return bool(os.environ.get("GIT_DIR")) or any((path / ".git").exists() for path in (directory, *directory.parents))
+
+
+def graph_revision(source):
+    git = ["git", "-C", source]
+    try:
+        head = subprocess.check_output([*git, "rev-parse", "--verify", "HEAD"], stderr=subprocess.PIPE)
+        revision = head.decode("ascii").strip()
+        subprocess.run([*git, "diff", "--quiet", "--ignore-submodules=untracked", revision, "--", "."],
+                       check=True, capture_output=True)
+    except (OSError, subprocess.CalledProcessError, UnicodeDecodeError):
+        return None
+    return revision
+
+
+def changes_since_graph(source, graph):
+    if "revision" not in graph and not is_git_checkout(source):
+        return []
+    revision = graph.get("revision")
+    if not isinstance(revision, str) or not re.fullmatch(r"[0-9a-f]{40}(?:[0-9a-f]{24})?", revision):
+        return None
+    try:
+        changed = subprocess.check_output(["git", "-C", source, "diff", "--name-only", "--no-renames", "--relative",
+                                           "--ignore-submodules=none", "-z", revision + "^{commit}", "HEAD", "--", "."],
+                                          stderr=subprocess.PIPE)
+        return [path for path in changed.decode("utf-8").split("\0") if path]
+    except (OSError, subprocess.CalledProcessError, UnicodeDecodeError):
+        return None
+
+
 def dependency_path(data, base):
     try:
         text = data.decode("utf-8")
@@ -275,8 +307,11 @@ def dump(build, out):
         tests[test["name"]] = {"registered": sorted(registered - {None}), "arguments": sorted(inputs),
                                "requires": props.get("FIXTURES_REQUIRED", []), "sets": props.get("FIXTURES_SETUP", []),
                                "depends": props.get("DEPENDS", []), "target": build.target(test)}
+    result = {"tests": tests, "closures": closures}
+    if is_git_checkout(build.source):
+        result["revision"] = graph_revision(build.source)
     with open(out, "w", encoding="utf-8") as file:
-        json.dump({"tests": tests, "closures": closures}, file)
+        json.dump(result, file)
     print(f"{len(tests)} tests, {len(closures)} build targets, {len(deps)} objects with header deps")
 
 
@@ -418,7 +453,11 @@ def main(argv=None):
         changed = changed_paths(args.changed)
     except (OSError, ValueError) as error:
         parser.error(str(error))
-    picked, full = select(graph, changed)
+    since_graph = changes_since_graph(build.source, graph)
+    if since_graph is None:
+        print("full run: cannot compare the test graph revision with HEAD")
+        return 0
+    picked, full = select(graph, sorted(set(changed).union(since_graph)))
     if picked is None:
         print(f"full run: {', '.join(full[:5])}")
         return 0
