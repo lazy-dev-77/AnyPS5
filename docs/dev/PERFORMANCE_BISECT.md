@@ -19,8 +19,9 @@ Create a JSON recipe outside the checkout so it stays available while the bisect
   "title_id": "PPSA00000",
   "games": ["/data/ps5/extracted-games"],
   "build_commands": [
+    ["git", "submodule", "update", "--init", "--recursive"],
     ["cmake", "-S", "{worktree}", "-B", "{build_dir}", "-DCMAKE_BUILD_TYPE=Release"],
-    ["cmake", "--build", "{build_dir}", "--parallel", "4"]
+    ["cmake", "--build", "{build_dir}", "--parallel", "4", "--target", "relinker", "libs"]
   ],
   "seconds": 60,
   "repetitions": 5,
@@ -30,6 +31,8 @@ Create a JSON recipe outside the checkout so it stays available while the bisect
 ```
 
 Replace the example title ID, game directory, and build options with values for the local setup. Relative `games`, `titles`, and `content` paths are resolved from the recipe file directory. `games` must point to an existing directory containing an extracted game package. `build_commands` must configure and build the selected revision in `{build_dir}`; every revision starts with that directory cleared, so the bisector cannot accidentally reuse another revision's build products. It refuses to clear a build path that contains tracked files or resolves outside its temporary worktree.
+
+The first command checks out the submodule revisions recorded by each measured commit in the temporary worktree. The `libs` target builds the patched system libraries that the title runner loads alongside the relinked executable.
 
 Optional recipe fields are `build_dir` (default `build`), `titles` (default `tools/titles.json`), and `content` (directory for title data files referenced by the catalog). `seconds` defaults to 60 and must be at least 20; `repetitions` defaults to 3 and must be at least 3. `regression_pct` defaults to 5 and `max_spread_pct` to 3. Both percentages must be greater than 0 and less than 100.
 
