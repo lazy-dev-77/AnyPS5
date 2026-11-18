@@ -47,6 +47,21 @@ class TimelineTests(unittest.TestCase):
         slices = trace_timeline.window_slices(trace_of(self.items), 0, 10000, threads=["presenter"])
         self.assertEqual([slice_["name"] for slice_ in slices], ["Driver.Present"])
 
+    def test_cli_keeps_timestamps_after_the_last_slice_in_the_default_window(self):
+        path = Path(self.tmp.name) / "capture.json"
+        output = path.with_suffix(".html")
+        for extra in ({"name": "present", "ph": "i", "args": {"present": 2}},
+                      {"name": "queue worker folded", "ph": "C", "args": {"ms": 1}},
+                      {"name": "trace buffer full", "ph": "i", "args": {"events_lost": 5}}):
+            with self.subTest(event=extra["name"]):
+                event = dict(extra, tid=1, pid=7, ts=12000)
+                path.write_text(json.dumps(document([*self.items, event])), encoding="utf-8")
+                done = subprocess.run([sys.executable, trace_timeline.__file__, str(path),
+                                       "--thread", "presenter", "--from-ms", "10"],
+                                      capture_output=True, text=True)
+                self.assertEqual(done.returncode, 0, done.stderr)
+                self.assertIn("window 10.000 to 12.000 ms, 0 threads, 0 bars", output.read_text(encoding="utf-8"))
+
     def test_cli_thread_filter_preserves_the_default_window_end(self):
         path = Path(self.tmp.name) / "capture.json"
         path.write_text(json.dumps(document(self.items)), encoding="utf-8")

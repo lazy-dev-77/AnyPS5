@@ -100,7 +100,12 @@ def main(arguments=None):
     parser.add_argument("--width", type=positive_integer, default=1000, help="width of the time axis in pixels (default 1000)")
     options = parser.parse_args(arguments)
     trace = trace_digest.load_trace(options.trace)
-    end_of_trace = max((ts + dur for slices in trace.slices.values() for ts, dur, _, _, _ in slices), default=0.0)
+    end_of_trace = max(
+        max((ts + dur for slices in trace.slices.values() for ts, dur, _, _, _ in slices), default=0.0),
+        max((ts for ts, _ in trace.presents), default=0.0),
+        max((ts for counters in trace.folded.values() for ts, _ in counters), default=0.0),
+        max((ts for _, ts, _ in trace.losses), default=0.0),
+    )
     if options.thread:
         trace.select_threads(options.thread)
     start_us = options.from_ms * 1000.0
