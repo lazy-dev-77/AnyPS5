@@ -62,6 +62,16 @@ def log():
 
 
 class AbSplitTests(unittest.TestCase):
+    def test_missing_phase_begin_cannot_supply_the_previous_phase_duration(self):
+        lines = [line for line in log() if not line.startswith("[ab] phase B 1 ")]
+        result = ab_split.split(lines)
+        first, following = result["phases"][:2]
+        self.assertIsNone(first["end_present"])
+        self.assertNotIn("presents/10s", first["metrics"])
+        self.assertNotIn("frame ms", first["metrics"])
+        self.assertEqual(following["end_present"], 220)
+        self.assertAlmostEqual(following["metrics"]["presents/10s"], 38 / 28 * 10)
+
     def test_noise_uses_only_consecutive_phase_indices(self):
         for indices, expected in (((0, 1, 2), 30.0), ((0, 3, 4), 20.0),
                                   ((0, 1, 4), 40.0), ((0, 3, 6), None),

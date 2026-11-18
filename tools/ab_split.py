@@ -107,7 +107,8 @@ def read_log(lines):
                     previous_point = current["settled"] or current["begin"]
                     if point[0] < previous_point[0] or point[1] < previous_point[1]:
                         raise ValueError("phase began before the previous phase boundary")
-                    current["end"] = point
+                    if index == current["index"] + 1:
+                        current["end"] = point
 
                 current = {"kind": kind, "index": index, "begin": point, "settled": None, "end": None,
                            "reports": {name: [] for name, _ in KINDS}}
