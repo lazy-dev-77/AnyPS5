@@ -334,14 +334,41 @@ test("a browser that denies direct ZIP writes explains how to continue", async t
     showSaveFilePicker: async () => ({ createWritable: async () => { throw denied; } })
   });
   assert.equal(get("save").value, "zip");
-  await selected(get, workers, "first.zip");
+  const worker = await selected(get, workers, "first.zip");
   assert.equal(get("convert").disabled, false);
   await get("convert").onclick();
   const message = get("error").children[0]?.textContent ?? get("error").textContent;
   assert.match(message, /desktop Chrome or Edge/);
   assert.doesNotMatch(message, /createWritable/);
-  assert.equal(get("selection").hidden, true);
-  assert.equal(get("convert").disabled, true);
+  assert.equal(get("selection").hidden, false);
+  get("save").value = "memory";
+  get("save").listeners.get("change")();
+  await get("convert").onclick();
+  assert.deepEqual(worker.messages.map(message => message.type), ["inspect", "convert"]);
+  assert.equal(worker.messages.at(-1).mode, "memory");
+  assert.equal(get("error").hidden, true);
+});
+
+test("an existing output folder can be retried in a different parent without reinspecting the archive", async t => {
+  let pick = 0;
+  const { get, workers } = await setup(t, "folder-exists", { showDirectoryPicker: async () => {
+    const occupied = pick++ === 0;
+    return { async getDirectoryHandle(name, options) {
+      assert.equal(name, "game-linux");
+      if (!occupied && !options?.create) throw new DOMException("missing", "NotFoundError");
+      return {};
+    } };
+  } });
+  const worker = await selected(get, workers, "game.zip");
+  get("save").value = "disk";
+  get("save").listeners.get("change")();
+  await get("convert").onclick();
+  assert.match(get("error").children[0].textContent, /game-linux already exists/);
+  assert.equal(get("convert").disabled, false);
+  await get("convert").onclick();
+  assert.equal(pick, 2);
+  assert.deepEqual(worker.messages.map(message => message.type), ["inspect", "convert"]);
+  assert.equal(get("error").hidden, true);
 });
 
 test("cancelling the ZIP picker does not report a failure", async t => {

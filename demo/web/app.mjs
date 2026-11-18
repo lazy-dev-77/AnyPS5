@@ -409,15 +409,17 @@ async function createZipSink(name, current) {
 $("convert").onclick = async () => {
   if ($("convert").disabled) return;
   const currentWorker = worker;
+  const target = document.querySelector('input[name="target"]:checked').value;
   working = true;
+  $("error").hidden = true;
   lock(true);
   update();
   try {
-    const target = document.querySelector('input[name="target"]:checked').value;
     if ($("save").value === "zip") {
       const name = selectedInputs.length > 1 ? `anyps5-${target}-apps.zip` : `${selectedInputs[0].name.replace(/\.zip$/iu, "")}-${target}.zip`;
-      sink = await createZipSink(name, () => currentWorker === worker);
-      if (sink === null) return;
+      const writable = await createZipSink(name, () => currentWorker === worker);
+      if (!writable) return;
+      sink = writable;
     } else if ($("save").value === "disk") {
       const name = selectedInputs[0].name.replace(/\.zip$/iu, "") + "-" + target;
       const parent = await window.showDirectoryPicker({ mode: "readwrite" });
@@ -430,14 +432,23 @@ $("convert").onclick = async () => {
       outputTransaction = transaction;
       outputDirectory = transaction.directory;
     }
-    $("status").hidden = false;
-    $("cancel").hidden = false;
-    $("error").hidden = true;
-    currentWorker.postMessage({ type: "convert", target, toIntel: $("intel").checked, mode: $("save").value, locale });
   } catch (error) {
     if (currentWorker !== worker) return;
-    if (error.name === "AbortError") { working = false; lock(false); update(); }
-    else await fail(error);
+    if (error.name !== "AbortError") {
+      errorState = { message: error, appended: [], context: { input: $("archive-name").textContent, target, release } };
+      $("error").hidden = false;
+    }
+    working = false;
+    lock(false);
+    update();
+    return;
+  }
+  try {
+    $("status").hidden = false;
+    $("cancel").hidden = false;
+    currentWorker.postMessage({ type: "convert", target, toIntel: $("intel").checked, mode: $("save").value, locale });
+  } catch (error) {
+    await fail(error);
   }
 };
 $("theme").onclick = () => {
